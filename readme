@@ -1,0 +1,10 @@
+This code compiles with pgf90: 
+pgf90 main3.F90 prodSimple.F90 physics3.F90 data.F90 functions.F90 -o test -O2
+
+and to run it needs an input file:
+  ./test < input > log &
+
+An input file looks like this:
+20 220 1 1000 1095 6 
+
+
