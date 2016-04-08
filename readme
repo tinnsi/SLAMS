@@ -5,6 +5,6 @@ and to run it needs an input file:
   ./test < input > log &
 
 An input file looks like this:
-20 220 1 1000 1095 6 
+20 220 1 1000 1095 6 50
 
 

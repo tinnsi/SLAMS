@@ -1,4 +1,4 @@
-SUBROUTINE production(pa, harvest, loop, time, prod, paraT)
+SUBROUTINE production(pa, harvest, loop, time, prod, paraT, MLD)
 
 ! input is in terms of moles organic carbon.
 ! n is #/m3
@@ -6,7 +6,7 @@ SUBROUTINE production(pa, harvest, loop, time, prod, paraT)
 
    TYPE(agg_part), INTENT(INOUT) :: pa
    INTEGER, INTENT(IN) :: loop, time
-   DOUBLE PRECISION, INTENT(INOUT) :: harvest, prod, paraT
+   DOUBLE PRECISION, INTENT(INOUT) :: harvest, prod, paraT, MLD
    DOUBLE PRECISION :: a, b, c, d, x, y, z, w, f, dw, tw, org_ratio
    DOUBLE PRECISION :: labi, refr, calc, arag, opal, clay
    DOUBLE PRECISION :: vorgC, vcalc, vopal, vclay, tvol, age
@@ -42,7 +42,6 @@ SUBROUTINE production(pa, harvest, loop, time, prod, paraT)
    pa%frac = 3d0
    CALL random_number(harvest)
    pa%z = 10000*exp(-5*harvest)
-!   pa%z = 20000*exp(-4*harvest)
    pa%b = 0
    pa%af = 0
 ! age vector for orgC and TEP
@@ -81,7 +80,7 @@ SUBROUTINE production(pa, harvest, loop, time, prod, paraT)
    ENDIF
    CALL fractal_dimension(pa)
    CALL density(pa)
-   CALL velocity(pa, paraT)
+   CALL velocity(pa, paraT, MLD)
    pa%Nn = 1
 
    npp(1) = npp(1) + pa%orgC(1,1)*pa%n
@@ -96,11 +95,11 @@ SUBROUTINE production(pa, harvest, loop, time, prod, paraT)
 
 END SUBROUTINE production
 !====================================================================
-SUBROUTINE TEP_prod(p, organic, harvest, TEP_f, paraT)
+SUBROUTINE TEP_prod(p, organic, harvest, TEP_f, paraT, MLD)
    USE the_info
 
    TYPE(agg_part), INTENT(INOUT) :: p
-   DOUBLE PRECISION, INTENT(INOUT) :: harvest, organic, TEP_f, paraT
+   DOUBLE PRECISION, INTENT(INOUT) :: harvest, organic, TEP_f, paraT, MLD
    DOUBLE PRECISION :: tvol, age
 
    p%orgC = 0
@@ -112,7 +111,6 @@ SUBROUTINE TEP_prod(p, organic, harvest, TEP_f, paraT)
    p%frac = 3d0
    p%n = TEP_f * organic/p%TEP(1,1)
    p%p = p%n
-!   p%z = 20000*exp(-4*harvest)
    p%z = 10000*exp(-5*harvest)
    p%b = 0
 
@@ -139,6 +137,6 @@ SUBROUTINE TEP_prod(p, organic, harvest, TEP_f, paraT)
 
    CALL fractal_dimension(p)
    CALL density(p)
-   CALL velocity(p, paraT)
+   CALL velocity(p, paraT, MLD)
 
 END SUBROUTINE TEP_prod

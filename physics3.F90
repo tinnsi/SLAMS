@@ -75,6 +75,8 @@ SUBROUTINE density(p)
       print*, 'NOT GOOD', p%id, p%Nn
    ENDIF
 
+   IF (TEP .lt. 0) print*, 'ERROR: density(TEP)', TEP, p%TEP(1,1), testVar, p%id
+
 END SUBROUTINE density
 !=====================================================================
 SUBROUTINE fractal_dimension(p)
@@ -140,6 +142,8 @@ SUBROUTINE dissolve(p)
       i = i + 1
    ENDDO
 
+   IF (TEPC .lt. 0) print*, 'ERROR: dissolve(TEP)', TEP, p%TEP(1,1), testVar, p%id
+
 END SUBROUTINE dissolve
 !====================================================================
 SUBROUTINE disintegrate(p, harvest)
@@ -197,6 +201,8 @@ SUBROUTINE particle_volume(p, tvol)
 
    tvol = vorgC + vcalc + vopal + vclay + vTEPC
 
+   IF (TEPC .lt. 0) print*, 'ERROR: partVol(TEP)', TEPC, p%TEP(1,1), testVar, p%id
+
 END SUBROUTINE particle_volume
 !====================================================================
 SUBROUTINE particle_mass(p, mass)
@@ -223,13 +229,16 @@ SUBROUTINE particle_mass(p, mass)
    mass = orgC * mw_orgC + TEPC * mw_TEP + calc * mw_co + &
           opal * mw_si + clay * mw_li
    
+   IF (TEPC .lt. 0) print*, 'ERROR: partMass(TEP)', TEP, p%TEP(1,1), testVar, p%id
+
 END SUBROUTINE particle_mass
 !====================================================================
-SUBROUTINE stickiness(p)
+SUBROUTINE stickiness(p, MLdepth, testVar)
 ! stickiness is a function of volume_TEP over vol_solid
    USE the_info
   
    TYPE(agg_part), INTENT(INOUT) :: p
+   DOUBLE PRECISION, INTENT(INOUT) :: MLdepth, testVar
    DOUBLE PRECISION :: tvol, TEPC, vTEPC, orgC, vorgC
    INTEGER :: i
 
@@ -249,9 +258,8 @@ SUBROUTINE stickiness(p)
    ENDDO
    vTEPC = TEPC * mw_TEP / rho_TEP
    vorgC = orgC * mw_orgC / rho_orgC
- 
-!   p%s = (vTEPC+0.1*vorgC) / tvol
-   p%s = vTEPC / tvol 
+
+   p%s = vTEPC / tvol !* testVar
 
    IF (p%b .eq. 0) THEN
       IF (p%s .lt. 0 .or. TEPC .lt. 0) THEN
@@ -259,18 +267,20 @@ SUBROUTINE stickiness(p)
       ENDIF
    ENDIF
 
+   IF (TEPC .lt. 0) print*, 'ERROR: stickiness(TEP)', TEP, p%TEP(1,1), testVar, p%id
+
 END SUBROUTINE stickiness
 !====================================================================
-SUBROUTINE velocity(p, paraT)
+SUBROUTINE velocity(p, paraT, MLdepth)
    USE the_info
 
    TYPE(agg_part), INTENT(INOUT) :: p
-   DOUBLE PRECISION, INTENT(IN) :: paraT
+   DOUBLE PRECISION, INTENT(IN) :: paraT, MLdepth
    DOUBLE PRECISION :: d_rho, one, u, fu, du
    DOUBLE PRECISION :: new_u, d, nu, pm_sign
    INTEGER :: i
 
-   CALL viscosity(p%z, nu, paraT)
+   CALL viscosity(p%z, nu, paraT, MLdepth)
    one = 1
    i = 1
    d_rho = ABS(p%rho - rho_sw)
@@ -433,6 +443,8 @@ SUBROUTINE find_dens(p, i)
       i = n_size
    ENDIF
 
+   IF (TEPC .lt. 0) print*, 'ERROR: find_dens(TEP)', TEP, p%TEP(1,1), testVar, p%id
+
 END SUBROUTINE find_dens
 !=====================================================================
 SUBROUTINE bottom(p, j)
@@ -482,6 +494,8 @@ SUBROUTINE bottom(p, j)
       CALL find_dens(p, m)
       densBed(m) = densBed(m) + organic
    ENDIF
+
+   IF (TEPC .lt. 0) print*, 'ERROR: bottom(TEP)', TEP, p%TEP(1,1), testVar, p%id
 
 END SUBROUTINE bottom
 !=====================================================================
@@ -539,12 +553,12 @@ SUBROUTINE radius(p)
 
 END SUBROUTINE radius
 !=====================================================================
-SUBROUTINE collide4(p1, p2, harvest, paraT)
+SUBROUTINE collide4(p1, p2, harvest, paraT, MLdepth, testVar)
    
    USE the_info
 
    TYPE(agg_part), INTENT(INOUT) :: p1, p2
-   DOUBLE PRECISION, INTENT(INOUT) :: harvest, paraT
+   DOUBLE PRECISION, INTENT(INOUT) :: harvest, paraT, MLdepth, testVar
    DOUBLE PRECISION :: test1, test2, endofdt, semiTime
    DOUBLE PRECISION :: q, dt, p, muu, nu, epsi
    DOUBLE PRECISION :: beta, betaBr, betaSh, betaDS
@@ -561,7 +575,7 @@ SUBROUTINE collide4(p1, p2, harvest, paraT)
    p = MIN(r1,r2)/MAX(r1,r2)
    
    epsi = 1e-4 !turbulent energy dissipation rate [cm2/s3]
-   CALL viscosity(p1%z, muu, paraT)  !muu dynamic viscosity
+   CALL viscosity(p1%z, muu, paraT, MLdepth)  !muu dynamic viscosity
    nu = muu /rho_sw                  !nu kinematic viscisity [cm2/s]
 
 test1 = p1%p + p2%p
@@ -610,7 +624,7 @@ test1 = p1%p + p2%p
       ENDIF
 
       IF (q_int .gt. 0) THEN
-         CALL stick2(p1,p2,q_int)
+         CALL stick2(p1,p2,q_int, MLdepth, testVar)
       ENDIF
 
       semiTime = semiTime + dt
@@ -624,11 +638,12 @@ test1 = p1%p + p2%p
 
 END SUBROUTINE collide4
 !========================================================================
-SUBROUTINE stick2(p1, p2, intRate)
+SUBROUTINE stick2(p1, p2, intRate, MLdepth, testVar)
    USE the_info
 
    TYPE(agg_part), INTENT(INOUT) :: p1, p2
    INTEGER, INTENT(INOUT) :: intRate
+   DOUBLE PRECISION, INTENT(INOUT) :: MLdepth, testVar
    INTEGER :: i, whereAmI
    DOUBLE PRECISION :: test1, test2, x, bak_n1, bak_n2
 
@@ -656,7 +671,7 @@ SUBROUTINE stick2(p1, p2, intRate)
       p1%n = p1%n - intRate*p2%n
       CALL radius(p2)
       CALL density(p2)
-      CALL stickiness(p2)
+      CALL stickiness(p2, MLdepth, testVar)
    ELSEIF (p1%n .lt. p2%n .and. intRate*p1%n .lt. p2%n) THEN
       whereAmI = 2
       p1%Nn = p1%Nn + p2%Nn*intRate
@@ -675,7 +690,7 @@ SUBROUTINE stick2(p1, p2, intRate)
       p2%n = p2%n - intRate*p1%n
       CALL radius(p1)
       CALL density(p1)
-      CALL stickiness(p1)
+      CALL stickiness(p1, MLdepth, testVar)
    ELSEIF (p1%n .eq. p2%n) THEN               
       whereAmI = 3
       p1%Nn = p1%Nn + p2%Nn
@@ -707,8 +722,8 @@ SUBROUTINE stick2(p1, p2, intRate)
       CALL radius(p2)
       CALL density(p1)
       CALL density(p2)
-      CALL stickiness(p1)
-      CALL stickiness(p2)
+      CALL stickiness(p1, MLdepth, testVar)
+      CALL stickiness(p2, MLdepth, testVar)
    ENDIF
    p1%p = p1%Nn * p1%n
    p2%p = p2%Nn * p2%n
@@ -729,12 +744,12 @@ SUBROUTINE stick2(p1, p2, intRate)
 
 END SUBROUTINE stick2
 !========================================================================
-SUBROUTINE self_collide(p, harvest)
+SUBROUTINE self_collide(p, harvest, MLdepth, testVar)
    
    USE the_info
 
    TYPE(agg_part), INTENT(INOUT) :: p
-   DOUBLE PRECISION, INTENT(INOUT) :: harvest
+   DOUBLE PRECISION, INTENT(INOUT) :: harvest, MLdepth, testVar
    DOUBLE PRECISION :: beta, betaBr, betaSh, betaDS
    DOUBLE PRECISION :: r1, w1,prob, alpha
    DOUBLE PRECISION :: test1, test2
@@ -758,7 +773,7 @@ SUBROUTINE self_collide(p, harvest)
       CALL random_number(harvest)
       
       IF (prob .gt. harvest) THEN
-         CALL self_stick(p)
+         CALL self_stick(p, MLdepth, testVar)
       ENDIF
    ENDIF
 
@@ -773,10 +788,11 @@ SUBROUTINE self_collide(p, harvest)
 
 END SUBROUTINE self_collide
 !========================================================================
-SUBROUTINE self_stick(p)
+SUBROUTINE self_stick(p, MLdepth, testVar)
    USE the_info
 
    TYPE(agg_part), INTENT(INOUT) :: p
+   DOUBLE PRECISION, INTENT(INOUT) :: MLdepth, testVar
    INTEGER :: i
    DOUBLE PRECISION :: test1, test2
 
@@ -800,7 +816,7 @@ SUBROUTINE self_stick(p)
 
    CALL radius(p)
    CALL density(p)
-   CALL stickiness(p)
+   CALL stickiness(p, MLdepth, testVar)
 
    test2 = p%orgC(1,1)*p%n
 
@@ -955,19 +971,20 @@ SUBROUTINE sink(p)
 
 END SUBROUTINE sink
 !========================================================================
-SUBROUTINE respiration(p, bacZoo, lostOrg, paraT) 
+SUBROUTINE respiration(p, bacZoo, lostOrg, paraT, MLdepth, testVar) 
    USE the_info
 
    TYPE(agg_part), INTENT(INOUT) :: p
    INTEGER, INTENT(IN) :: bacZoo  
 !  bacZoo = { 1(=bac), 2(=zoo) }
-   DOUBLE PRECISION, INTENT(IN) :: paraT
+   DOUBLE PRECISION, INTENT(IN) :: paraT, MLdepth
+   DOUBLE PRECISION, INTENT(INOUT) :: testVar
    DOUBLE PRECISION, INTENT(OUT) :: lostOrg
    DOUBLE PRECISION, DIMENSION(10) :: coef, coefTEP
    DOUBLE PRECISION :: temp, lostO, organic, temp_effect, TEPC, lostTEP
    INTEGER :: i, x
 
-   CALL temperature(temp, p%z, paraT)
+   CALL temperature(temp, p%z, paraT, MLdepth)
    CALL find_depth(p%z, x)
    
 ! total amount of organic carbon and TEP
@@ -980,17 +997,17 @@ SUBROUTINE respiration(p, bacZoo, lostOrg, paraT)
       i = i + 1
    ENDDO
   
-! coefficients for bacterial (1) and zooplankton (2) respiration
+! bacZoo coefficients for bacterial (1) and zooplankton (2) respiration
 ! of "regular" organic carbon and TEP
    i = 1
    temp_effect = exp(DLOG(2.0)*(temp-30.0)/10.0)
    DO WHILE (i .le. 10)
       IF (bacZoo .eq. 1) THEN
-         coef(i) = 0.1/p%orgC(i,2) * temp_effect 
+         coef(i) = 0.1/p%orgC(i,2) * temp_effect !* testVar
          coefTEP(i) = 0.1/p%TEP(i,2) * temp_effect 
       ELSEIF (bacZoo .eq. 2) THEN
          IF (p%af .eq. 1) THEN      !Micro
-            coef(i) = (1-(2.0**i/2.0**11))/timestep*0.9*temp_effect
+            coef(i) = (1-(2.0**i/2.0**11))/timestep*0.9*temp_effect 
             coefTEP(i) = (1-(2.0**i/2.0**11))/timestep*0.9*temp_effect
          ENDIF
          IF (coef(i)*timestep .gt. 1) THEN
@@ -1038,15 +1055,16 @@ ENDIF
       print*, 'RESPIRATION - EMERGENCY', p%id
       print*, lostOrg, organic, coef
    ENDIF
+   IF (p%TEP(1,1) .lt. 0) print*, 'respiration(TEP)', p%id
 
 END SUBROUTINE respiration
 !========================================================================
-SUBROUTINE microzoop(p, zoop, harvest, paraT, paraD)
+SUBROUTINE microzoop(p, zoop, harvest, paraT, paraD, MLdepth, testVar)
    USE the_info
 
    TYPE(agg_part), INTENT(INOUT) :: p
    DOUBLE PRECISION, INTENT(INOUT) :: zoop   !molC/m^3
-   DOUBLE PRECISION, INTENT(INOUT) :: harvest, paraT, paraD
+   DOUBLE PRECISION, INTENT(INOUT) :: harvest, paraT, paraD, MLdepth, testVar
    DOUBLE PRECISION :: zoo, dv, dv1, v, P_enc, orgCfrac, food, fact
    DOUBLE PRECISION :: P_break, apetite, microZ, depth, depth2
    INTEGER :: i, flag
@@ -1056,8 +1074,9 @@ SUBROUTINE microzoop(p, zoop, harvest, paraT, paraD)
    flag = 0
 
    depth2 = depth/15.0
-   fact = 0.1*(depth2**0.5*exp(-depth2/80.0) - 3.9)
-   P_enc = 10**fact * (-1/log(microZ))
+!   fact = 0.1*(depth2**0.5*exp(-depth2/80.0) - 3.9)
+   fact = -4.5 
+   P_enc = 10**fact * (-1/log(microZ)) * timestep !* testVar
    IF (-1/log(microZ) .gt. 1) THEN
       print*, 'ERROR: microzoop:', P_enc, microZ, depth
       P_enc = 0.9
@@ -1066,7 +1085,7 @@ SUBROUTINE microzoop(p, zoop, harvest, paraT, paraD)
    CALL random_number(harvest)
    IF (P_enc .gt. harvest) THEN
 
-      P_break = DATAN(p%r/1e4) * 0.1
+      P_break = DATAN(p%r/1e4) !* 0.1 * testVar
       CALL random_number(harvest)
       harvest2 = harvest
       CALL random_number(harvest)
@@ -1075,17 +1094,17 @@ SUBROUTINE microzoop(p, zoop, harvest, paraT, paraD)
       IF (P_break .gt. harvest .and. p%Nn .gt. 1) THEN
          CALL break_p(p, harvest)
       ELSEIF (apetite .gt. harvest2) THEN
-         CALL ingestion(p, 1, paraT, paraD, harvest)
+         CALL ingestion(p, 1, paraT, paraD, harvest, MLdepth, testVar)
       ENDIF
    ENDIF
  
 END SUBROUTINE microzoop
 !========================================================================
-SUBROUTINE ingestion(p, flagFP, paraT, paraD, harvest)
+SUBROUTINE ingestion(p, flagFP, paraT, paraD, harvest,MLdepth, testVar)
    USE the_info
 
    TYPE(agg_part), INTENT(INOUT) :: p
-   DOUBLE PRECISION, INTENT(INOUT) :: paraT, paraD
+   DOUBLE PRECISION, INTENT(INOUT) :: paraT, paraD, MLdepth, testVar
    INTEGER, INTENT(IN) :: flagFP !FP: 1=micro 
    TYPE(agg_part)  :: p_old
    DOUBLE PRECISION :: organic, lostO, lostC, lostA, orgLost
@@ -1096,26 +1115,27 @@ SUBROUTINE ingestion(p, flagFP, paraT, paraD, harvest)
    p_old = p
    organic = 0
    i = 1
+   TEP=0
    DO WHILE (i .le. 10)
       organic = organic + p%orgC(i,1)
       TEP = TEP + p%TEP(i,1)
       i = i + 1
    ENDDO
    IF (organic .lt. 0) print*, 'ERROR: ingestion:', organic, p%orgC(1,1)
-   IF (TEP .lt. 0) print*, 'ERROR: ingestion(TEP)', TEP, p%TEP(1,1)
+   IF (TEP .lt. 0) print*, 'ERROR: ingestion(TEP)', TEP, p%TEP
    calcite = p%mineral(1)
    aragonite = p%mineral(2)
    
    CALL find_depth(p%z, x)
 
    calcDiss = 0.02*paraD
-   aragDiss = calcDiss/5
+   aragDiss = calcDiss/5 !* paraD
 
 ! zooplankton organic carbon and TEP respiration
    IF (organic .gt. 0) THEN
       IF (flagFP .eq. 1) THEN     !micro
          p%af = 1
-         CALL respiration(p, 2, lostO, paraT)
+         CALL respiration(p, 2, lostO, paraT, MLdepth, testVar)
          orgC_G1(x) = orgC_G1(x) + lostO*p%n
       ENDIF 
  !zooplankton calcite dissolution
@@ -1176,29 +1196,34 @@ SUBROUTINE photolysis(p)
    
 END SUBROUTINE photolysis
 !========================================================================
-SUBROUTINE temperature(temp, depth, paraT)
+SUBROUTINE temperature(temp, depth, paraT, MLdepth)
    USE the_info
 
 ! depth is in cm, temp in C
 
    DOUBLE PRECISION, INTENT(OUT) :: temp
-   DOUBLE PRECISION, INTENT(IN) :: depth, paraT
-!   DOUBLE PRECISION, DIMENSION(2,37) :: iTemp   !eqPac
-   DOUBLE PRECISION, DIMENSION(2,3) :: iTemp   !NA or SO
-   DOUBLE PRECISION :: z
+   DOUBLE PRECISION, INTENT(IN) :: depth, paraT, MLdepth
+   DOUBLE PRECISION, DIMENSION(2,3) :: iTemp   
+   DOUBLE PRECISION :: z, MLD
    INTEGER :: i
 
-   iTemp(1,:) = [paraT,4,2]  
-   iTemp(2,:) = [0,1000,4000]
+   MLD = MLdepth / 100.0  ! MLdepth is in [cm], MLD is in [m]
 
-   z = depth/100
+   iTemp(1,:) = [paraT,4,2]  
+   iTemp(2,:) = [MLD,1000,4000]
+
+   z = depth/100  !m
    i = 1
    DO WHILE ( z .ge. iTEMP(2,i) ) 
       i = i + 1
    ENDDO
 
-   CALL interpolate(iTemp(1,i-1),iTemp(1,i),iTemp(2,i-1),iTemp(2,i),&
+   IF (depth .lt. MLdepth) THEN
+     temp = paraT
+   ELSE
+      CALL interpolate(iTemp(1,i-1),iTemp(1,i),iTemp(2,i-1),iTemp(2,i),&
         temp,z)
+   ENDIF
 
    IF (temp .gt. 35) THEN
       print*, 'temperature greater than 35'
@@ -1283,12 +1308,12 @@ SUBROUTINE orgC_fraction(p, dwOrgCfrac)
 
 END SUBROUTINE orgC_fraction
 !========================================================================
-SUBROUTINE dissolution(p, paraC, paraT)
+SUBROUTINE dissolution(p, paraC, paraT, MLdepth)
 
    USE the_info
 
    TYPE(agg_part), INTENT(INOUT) :: p
-   DOUBLE PRECISION, INTENT(INOUT) :: paraC, paraT
+   DOUBLE PRECISION, INTENT(INOUT) :: paraC, paraT, MLdepth
    INTEGER :: x
    DOUBLE PRECISION :: R, Rd, Ta, temp, S_c, S_a
    DOUBLE PRECISION :: lostC, lostS, lostA, k_size
@@ -1300,7 +1325,7 @@ SUBROUTINE dissolution(p, paraC, paraT)
    S_a = 0
 
    IF (p%mineral(1)+p%mineral(2)+p%mineral(3) .gt. 0) THEN
-      CALL temperature(temp, p%z, paraT)
+      CALL temperature(temp, p%z, paraT, MLdepth)
       CALL deltaCO3(p%z, S_c, S_a, paraC)
 
       Ta = temp+273.15
@@ -1314,7 +1339,7 @@ SUBROUTINE dissolution(p, paraC, paraT)
  ! then the whole thing dissolves, otherwise according to thermodyn.
       IF (S_c .gt. 0) THEN
          IF (p%mineral(1) .gt. 2.5e-12) THEN
-            k_size = (p%mineral(1)/(p%mineral(1)+1e-10))
+            k_size = (p%mineral(1)/(p%mineral(1)+1e-10)) 
             lostC = k_caco3_c*S_c*p%mineral(1)*timestep
 !            lostC = k_size*k_caco3_c*S_c*p%mineral(1)*timestep
 !            IF (p%mineral(1) .lt. 2.5e-12 .or. p%mineral(1) .lt. lostC) THEN  
@@ -1329,7 +1354,7 @@ SUBROUTINE dissolution(p, paraC, paraT)
 ! aragonite dissolution       
       IF (S_a .gt. 0) THEN
          IF (p%mineral(2) .gt. 2.5e-12) THEN
-            k_size = (p%mineral(2)/(p%mineral(2)+1e-10))
+            k_size = (p%mineral(2)/(p%mineral(2)+1e-10)) 
             lostA = k_caco3_a*S_a*p%mineral(2)*timestep
 !            lostA = k_size*k_caco3_a*S_a*p%mineral(2)*timestep
             IF (lostA .gt. p%mineral(2)) THEN
@@ -1348,8 +1373,8 @@ SUBROUTINE dissolution(p, paraC, paraT)
 
 ! opal dissolution
       IF (p%mineral(3) .gt. 0) THEN
-         k_size = (p%mineral(3)/(p%mineral(3)+1e-10))  !DEFAULT
-!          (p%mineral(3)/(p%mineral(3)+1e-11))  !ALTERNATE
+         k_size = (p%mineral(3)/(p%mineral(3)+1e-10))   !DEFAULT
+!          k_size = (p%mineral(3)/(p%mineral(3)+1e-9))  !ALTERNATE
          lostS = k_size*p%mineral(3)*Rd*timestep
          p%mineral(3) = p%mineral(3) - lostS
          inventory(3) = inventory(3) - lostS*p%n
@@ -1444,15 +1469,15 @@ SUBROUTINE deltaCO3(depth, S_c, S_a, paraC)
 
 END SUBROUTINE deltaCO3
 !========================================================================
-SUBROUTINE viscosity(depth, nu, paraT)
+SUBROUTINE viscosity(depth, nu, paraT, MLdepth)
 ! dynamic viscosity in units g/cms
    USE the_info
 
-   DOUBLE PRECISION, INTENT(IN) :: depth, paraT
+   DOUBLE PRECISION, INTENT(IN) :: depth, paraT, MLdepth
    DOUBLE PRECISION, INTENT(OUT) :: nu
    DOUBLE PRECISION :: temp
 
-   CALL temperature(temp, depth, paraT)
+   CALL temperature(temp, depth, paraT, MLdepth)
 
    nu = 5e-6 * exp(2250/(temp+273.15))
    IF (nu .lt. 1e-3 .or. nu .gt. 1) THEN
@@ -1460,4 +1485,17 @@ SUBROUTINE viscosity(depth, nu, paraT)
       print*, depth, temp, nu
    ENDIF
 
+END SUBROUTINE
+!========================================================================
+SUBROUTINE mixedLayer(p, harvest, MLdepth)
+
+   USE the_info
+
+   TYPE(agg_part), INTENT(INOUT) :: p
+   DOUBLE PRECISION, INTENT(INOUT) :: harvest, MLdepth
+ 
+   CALL random_number(harvest)
+ 
+   p%z = harvest * MLdepth
+   
 END SUBROUTINE

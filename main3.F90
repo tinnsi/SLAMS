@@ -93,7 +93,7 @@ PROGRAM main
    
    INTEGER :: ka, time, i, j, l, agg_max, z_max, temp1, temp2, tmp1, tmp2
    INTEGER :: intT, intC, intD, intP, intS, intTEP, intTEP2, tsV
-   INTEGER :: intFrac, yaff, resol
+   INTEGER :: intMLD, intTest
    INTEGER :: UNIT, free_count, loop
    INTEGER, DIMENSION(1) :: old, seed
    INTEGER, DIMENSION(a_number), TARGET :: agg_z
@@ -103,9 +103,8 @@ PROGRAM main
    DOUBLE PRECISION, DIMENSION(1) :: harvest
    DOUBLE PRECISION :: depth, temp, dCO3c, dCO3a, max_r, organic, dummy
    DOUBLE PRECISION :: paraT, paraC, paraD, paraP, paraS
-   DOUBLE PRECISION :: paraTEP
+   DOUBLE PRECISION :: paraTEP, paraMLD, paraTest, MLdepth
    DOUBLE PRECISION :: orgC1, orgC4, caco31, caco34, food
-   DOUBLE PRECISION :: Fsize, resolution
    DOUBLE PRECISION :: before, after, TEP_frac, year, season
    DOUBLE PRECISION :: mass, day
    DOUBLE PRECISION, DIMENSION(n_db) :: orgCtotal, calctotal, rainratio
@@ -124,15 +123,19 @@ PROGRAM main
    CHARACTER (len=14) :: ctime, parP, parC, parT, parS
    CHARACTER (len=30) :: file_name, spec_name
 
-   READ(5,*) intT,intC,intD,intP,intS,intTEP
-   
-   paraT = intT    !SST
+   READ(5,*) intT,intC,intD,intP,intS,intTEP, intMLD, intTest
+
+   paraT = intT    !SST [C]
    paraC = intC    !CO3=
-   paraD = intD    !zoopl. dissol.
+   paraD = intD!/8.0    !zoopl. dissol.
    paraP = intP    !primary prod.
    paraS = intS    !seasonality
-   paraTEP = intTEP!fraction of pp that is TEP
+   paraTEP = intTEP  !/8.0!fraction of pp that is TEP
+   paraMLD = intMLD  !mixed layer thickness [m]
+   paraTest = intTest !/ 8.0
 
+   MLdepth = paraMLD * 100 !in cm
+   print*, paraMLD, paraTest, 'here!!'
 #ifdef writing
    CALL open_files()
 #endif
@@ -152,6 +155,8 @@ PROGRAM main
 ! Fraction of organic carbon that is TEP
    TEP_frac = paraTEP/100.0 !0.2
 
+!! In this while-loop we first look at the BI and find how many mols of C are produced
+!! loop is the number of ACs produced in a timestep
    DO WHILE (time .le. endoftime) 
       i = 1
       loop = FLOOR(20*1095/paraS) 
@@ -164,6 +169,12 @@ PROGRAM main
       ELSE
          season = 0
       ENDIF
+
+! and then we make new ACs at the end of the array or fill in a vacated spot
+! agg_max is the index of the last filled spot of the array.  
+! free_count is the number of spots available before agg_max
+! free_agg is a list of the indexes available in agg
+! agg is the list (array) of ACs
 ! primary production 
       DO WHILE (i .le. loop .and. season .gt. 0)
          IF (free_count .gt. 1) THEN
@@ -177,7 +188,7 @@ PROGRAM main
          ENDIF
          IF (pa%id .gt. a_number) print*, 'END OF LIST', pa%id
          CALL random_number(harvest)
-         CALL production(pa, harvest, loop, time, season, paraT)
+         CALL production(pa, harvest, loop, time, season, paraT, MLdepth)
                         
          mass_i(1) = mass_i(1) + pa%orgC(1,1)*pa%n
          mass_i(2) = mass_i(2) + (pa%mineral(1)+pa%mineral(2))*pa%n
@@ -186,6 +197,9 @@ PROGRAM main
          organic = organic + pa%orgC(1,1)*pa%n
          i = i + 1
       ENDDO 
+
+! TEP production is similar to primary production, except TEP is produced rather 
+! than phytoplankton (or dust)
 ! TEP production
       IF (season .gt. 0) THEN
          IF (free_count .gt. 1) THEN
@@ -198,11 +212,13 @@ PROGRAM main
             agg_max = agg_max + 1
          ENDIF
          CALL random_number(harvest)
-         CALL TEP_prod(pa,organic,harvest, TEP_frac, paraT)
+         CALL TEP_prod(pa,organic,harvest, TEP_frac, paraT, MLdepth)
          mass_i(5) = mass_i(5) + pa%TEP(1,1)*pa%n
       ENDIF
 
-! find agg from same depth and put them into an array
+! here we find ACs from same depth and put them into an array
+! z_max is the number of ACs in this depth-bin (dz)
+! agg_z is an array or list of ACs at this depth
       depth = 0
       DO WHILE (depth .lt. seafloor) 
          z_max = 0
@@ -217,7 +233,8 @@ PROGRAM main
             ENDIF
             i = i + 1
          ENDDO 
-! make aggregates at similar depth aggregate
+
+! here we make ACs aggregate.  ACs in the same depth-bin can aggregate.
          i = 1
          j = 1
          DO WHILE (i .le. z_max) 
@@ -233,10 +250,10 @@ PROGRAM main
             IF (pa1%b .eq. 0 .and. pa2%b .eq. 0) THEN
                IF (tmp1 .eq. tmp2) THEN
 #ifdef selfColl 
-                  CALL self_collide(pa1, harvest)
+                  CALL self_collide(pa1, harvest, MLdepth, paraTest)
 #endif
                ELSEIF (tmp1 .ne. tmp2) THEN
-                  CALL collide4(pa1, pa2, harvest, paraT)
+                  CALL collide4(pa1, pa2, harvest, paraT, MLdepth, paraTest)
                ENDIF
             ENDIF
             j = j + 1
@@ -246,6 +263,7 @@ PROGRAM main
       ENDDO 
 
 ! make zooplankton array using the agg_z() created above
+! food is the amount of organic carbon younger than about 2 weeks
          i = 1
          food = 0
          DO WHILE (i .le. z_max) 
@@ -266,6 +284,7 @@ PROGRAM main
          food = food * 1/(dz/100.0)
          mic(i) = food                 !molC/m3
 
+! here we pool together particles that are almost dissolved
 #ifdef housekeeping
          i = 1
          j = 1
@@ -309,7 +328,9 @@ print*, 'hello', time
             CALL write_sedTrap(time, day)
          ENDIF
 
-! update density, velocity, ... for all particles
+! This is the main loop.  Here we loop through all the particles, 
+! call all the biological and chemical reactions and update density, 
+! velocity, etc.
       i = 1 !aggegate
       j = 1 !depth
       l = 1 !sizebin
@@ -318,18 +339,18 @@ print*, 'hello', time
             pa => agg(i)
             CALL find_depth(pa%z, j)
             CALL find_size(pa%r, l, n_size)
-            CALL stickiness(pa)
+            CALL stickiness(pa, MLdepth, paraTest)
             CALL density(pa)
 #ifdef microzoo
             IF (mic(j) .gt. 0) THEN
-               CALL microzoop(pa,mic(j),harvest,paraT,paraD)
+               CALL microzoop(pa,mic(j),harvest,paraT,paraD, MLdepth, paraTest)
             ENDIF
 #endif
 #ifdef respi
-            CALL respiration(pa, 1, dummy, paraT)
+            CALL respiration(pa, 1, dummy, paraT, MLdepth, paraTest)
 #endif 
 #ifdef dissol
-            CALL dissolution(pa,paraC,paraT)
+            CALL dissolution(pa,paraC,paraT, MLdepth)
 #endif
 #ifdef disintegr
             CALL disintegrate(pa, harvest)
@@ -340,8 +361,11 @@ print*, 'hello', time
 #ifdef sinking
             CALL fractal_dimension(pa)
             CALL radius(pa)
-            CALL velocity(pa, paraT)
+            CALL velocity(pa, paraT, MLdepth)
             CALL sink(pa, time)
+            IF (pa%z .lt. MLdepth) THEN
+               CALL mixedLayer(pa, harvest, MLdepth)
+            ENDIF
             CALL bottom(pa,l)
 #endif
 #ifdef dissolved
@@ -352,7 +376,7 @@ print*, 'hello', time
                CALL photolysis(pa)
             ENDIF
 #endif
-            CALL stickiness(pa)
+            CALL stickiness(pa, MLdepth, paraTest)
          ENDIF
          IF (agg(i)%b .eq. 1) THEN
             free_agg(free_count) = i
@@ -362,6 +386,8 @@ print*, 'hello', time
          ENDIF
          i = i + 1
       ENDDO 
+
+! Here is the end of the main loop.  Below we just write out the results.
 ! figure out how much stuff there is at each depth
       i = 1
       data_stuff = 0
