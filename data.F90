@@ -340,8 +340,6 @@ SUBROUTINE write_sedTrap(time, day)
    CHARACTER (len=30) :: file_name
    CHARACTER (len=14) :: ctime
 
-print*, 'in here', time, day, sedTrap(1,1)
-print*, 'in here', sedTrap(1,1)/day
 ! parameters for file-names
             WRITE(ctime,*) time
             ctime = adjustl(ctime)
